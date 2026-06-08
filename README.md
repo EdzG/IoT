@@ -43,15 +43,31 @@ To prevent "alert fatigue" from natural movement (like breathing or reaching), t
 
 ## 🛠 Setup & Usage
 
-### 1. Using the Mock Server (Simulation)
+### 1. Arduino IDE Setup (Real Hardware)
+To compile the `posture_sense.ino` firmware, you must configure your Arduino IDE with the following:
+
+#### **A. Board Manager**
+1. Open Arduino IDE -> **File** -> **Preferences**.
+2. Add this URL to "Additional Boards Manager URLs":  
+   `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
+3. Go to **Tools** -> **Board** -> **Boards Manager**.
+4. Search for **esp32** by **Espressif Systems** and install it.
+5. Select the target hardware: **Wireless Tracker** (under the ESP32S3 Dev Module or Heltec boards list).
+
+#### **B. Required Libraries**
+Open the **Library Manager** (Ctrl+Shift+I) and install these exact targets:
+- **SparkFun ICM-20948** — by SparkFun Electronics
+- **Madgwick** — by Arduino
+- **ArduinoJson** — by Benoit Blanchon
+- **AsyncTCP** — by ESP32Async
+- **ESP Async WebServer** — by ESP32Async
+
+---
+
+### 2. Using the Mock Server (Simulation)
 1. Install dependencies: `pip install websockets`.
 2. Run the server: `python mock_server.py`.
 3. Open `index.html`. It will automatically connect to `ws://localhost:8765`.
-
-### 2. Using the Real Hardware
-1. Flash `posture_sense.ino` to your ESP32-S3.
-2. **Wireless Mode:** Connect to the WiFi AP `PostureSense` (Password: `12345678`).
-3. Open `http://posture.local` (or `192.168.4.1`) in your browser.
 
 ---
 
