@@ -203,6 +203,11 @@ async def state_machine(queue: asyncio.Queue) -> None:
             payload["ema"] = {
                 name: round(ema[i], 4) for i, name in enumerate(ALERT_NAMES)
             }
+            payload["raw"] = {
+                "upper": {"p": round(math.sin(t) * 5, 2),   "r": round(math.cos(t) * 2, 2),   "y": 0.0},
+                "mid":   {"p": round(math.sin(t+1) * 5, 2), "r": round(math.cos(t+1) * 2, 2), "y": 0.0},
+                "lower": {"p": round(math.sin(t+2) * 5, 2), "r": round(math.cos(t+2) * 2, 2), "y": 0.0},
+            }
             await broadcast(json.dumps(payload))
 
             # Drain stale commands that arrived while monitoring (e.g. duplicate START_*)

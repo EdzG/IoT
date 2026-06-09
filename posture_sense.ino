@@ -492,6 +492,46 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     .lm.t-send  { color: var(--green); }
     .lm.t-sys   { color: var(--text-2); font-style: italic; }
 
+    /* ── sensor panel ────────────────────────────────────────────────────── */
+    .sensor-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .sensor-panel-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-2);
+      margin-bottom: 0.75rem;
+    }
+
+    .sensor-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+
+    .sensor-cell {
+      font-size: 0.78rem;
+      color: var(--text-2);
+    }
+
+    .sensor-cell .sensor-label {
+      font-weight: 600;
+      color: var(--text-1);
+      margin-bottom: 0.2rem;
+    }
+
+    .sensor-cell .val {
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+      color: var(--blue);
+    }
+
     /* ── responsive ──────────────────────────────────────────────────────── */
     @media (max-width: 1100px) {
       .cards-grid { grid-template-columns: repeat(3, 1fr); }
@@ -541,6 +581,24 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="cards-grid" id="cards-grid"></div>
+
+  <section class="sensor-panel">
+    <div class="sensor-panel-title">IMU Raw Readings (Pitch / Roll / Yaw)</div>
+    <div class="sensor-grid">
+      <div class="sensor-cell" id="raw-upper">
+        <div class="sensor-label">Upper</div>
+        <span class="val">--</span>
+      </div>
+      <div class="sensor-cell" id="raw-mid">
+        <div class="sensor-label">Mid</div>
+        <span class="val">--</span>
+      </div>
+      <div class="sensor-cell" id="raw-lower">
+        <div class="sensor-label">Lower</div>
+        <span class="val">--</span>
+      </div>
+    </div>
+  </section>
 
   <section class="log-section">
     <div class="log-header">
@@ -762,6 +820,14 @@ function onMonitorFrame(data) {
     const ema    = data.ema?.[c.alert] ?? 0;
     setCard(c.key, flagOn ? 's-active' : 's-good', ema);
   });
+
+  if (data.raw) {
+    ['upper', 'mid', 'lower'].forEach(pos => {
+      const r  = data.raw[pos];
+      const el = document.querySelector(`#raw-${pos} .val`);
+      if (el) el.textContent = `${r.p.toFixed(1)}° / ${r.r.toFixed(1)}° / ${r.y.toFixed(1)}°`;
+    });
+  }
 }
 
 // ── card rendering ────────────────────────────────────────────────────────────
@@ -1234,7 +1300,7 @@ void handleMonitoring() {
 
   // 4 Hz JSON telemetry — boolean flags + raw EMA scores for all connected clients
   {
-    StaticJsonDocument<512> doc;
+    StaticJsonDocument<768> doc;
     doc["thoracic_slouch"]      = (flags & POST_THORACIC_SLOUCH)      != 0;
     doc["forward_flexion"]      = (flags & POST_FORWARD_FLEXION)      != 0;
     doc["lateral_lean"]         = (flags & POST_LATERAL_LEAN)         != 0;
@@ -1246,6 +1312,21 @@ void handleMonitoring() {
     ema["LATERAL_LEAN"]         = emaScores[2];
     ema["LUMBAR_HYPERLORDOSIS"] = emaScores[3];
     ema["LUMBAR_FLATTENING"]    = emaScores[4];
+
+    JsonObject raw   = doc.createNestedObject("raw");
+    JsonObject upper = raw.createNestedObject("upper");
+    upper["p"] = reading.upper.pitch;
+    upper["r"] = reading.upper.roll;
+    upper["y"] = reading.upper.yaw;
+    JsonObject mid = raw.createNestedObject("mid");
+    mid["p"] = reading.mid.pitch;
+    mid["r"] = reading.mid.roll;
+    mid["y"] = reading.mid.yaw;
+    JsonObject lower = raw.createNestedObject("lower");
+    lower["p"] = reading.lower.pitch;
+    lower["r"] = reading.lower.roll;
+    lower["y"] = reading.lower.yaw;
+
     String json;
     serializeJson(doc, json);
     ws.textAll(json);
