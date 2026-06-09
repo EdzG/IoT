@@ -30,6 +30,21 @@ To prevent "alert fatigue" from natural movement (like breathing or reaching), t
 - **Persistence:** You must maintain a bad posture for **~5 seconds** for the score to cross the **0.65 alert threshold**.
 - **Forgiveness:** Short movements do not trigger alerts.
 
+### 4. Sensor Health Monitoring
+
+The **IMU Raw Readings** panel shows live pitch / roll / yaw for each sensor and flags hardware problems in real time.
+
+| Panel state | Meaning |
+| :--- | :--- |
+| Normal (blue values) | Sensor is delivering valid data every tick |
+| **ERROR** badge (red cell) | That specific sensor failed `dataReady()` this tick — no data was received |
+| **FAULT** (all three red) | Firmware sent `ERROR:IMU_MALFUNCTION` — 3 consecutive failed reads; device enters frozen state |
+| **STALE** badge (orange cell) | No JSON frame received in > 1.5 s — likely a bus lockup or WiFi drop |
+
+The firmware always broadcasts a JSON frame every 250 ms, including a `"v": true/false` field per sensor (`raw.upper.v`, `raw.mid.v`, `raw.lower.v`). When `v` is `false`, the Madgwick filter was not updated for that sensor that tick and posture detection is skipped. EMA scores decay toward zero during invalid periods so stale scores cannot trigger false alerts once the sensor recovers.
+
+Sensor cells reset to normal automatically when valid data resumes, and reset to `--` on recalibration or device restart.
+
 ---
 
 ## 📂 Project Structure

@@ -519,6 +519,10 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     .sensor-cell {
       font-size: 0.78rem;
       color: var(--text-2);
+      border-radius: 8px;
+      padding: 0.5rem 0.6rem;
+      border: 1px solid transparent;
+      transition: border-color 0.3s, background 0.3s;
     }
 
     .sensor-cell .sensor-label {
@@ -530,7 +534,34 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     .sensor-cell .val {
       font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
       color: var(--blue);
+      transition: color 0.3s;
     }
+
+    .sensor-cell.s-error {
+      border-color: rgba(248,81,73,.4);
+      background: rgba(248,81,73,.06);
+    }
+    .sensor-cell.s-error .val { color: var(--red); }
+    .sensor-cell.s-stale {
+      border-color: rgba(240,136,62,.35);
+      background: rgba(240,136,62,.05);
+    }
+    .sensor-cell.s-stale .val { color: var(--orange); }
+
+    .sensor-status {
+      display: inline-block;
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.1rem 0.35rem;
+      border-radius: 999px;
+      border: 1px solid currentColor;
+      margin-left: 0.35rem;
+      vertical-align: middle;
+    }
+    .sensor-status.ss-error { color: var(--red); }
+    .sensor-status.ss-stale { color: var(--orange); }
 
     /* ── responsive ──────────────────────────────────────────────────────── */
     @media (max-width: 1100px) {
@@ -586,15 +617,15 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
     <div class="sensor-panel-title">IMU Raw Readings (Pitch / Roll / Yaw)</div>
     <div class="sensor-grid">
       <div class="sensor-cell" id="raw-upper">
-        <div class="sensor-label">Upper</div>
+        <div class="sensor-label">Upper <span class="sensor-status" id="stat-upper"></span></div>
         <span class="val">--</span>
       </div>
       <div class="sensor-cell" id="raw-mid">
-        <div class="sensor-label">Mid</div>
+        <div class="sensor-label">Mid <span class="sensor-status" id="stat-mid"></span></div>
         <span class="val">--</span>
       </div>
       <div class="sensor-cell" id="raw-lower">
-        <div class="sensor-label">Lower</div>
+        <div class="sensor-label">Lower <span class="sensor-status" id="stat-lower"></span></div>
         <span class="val">--</span>
       </div>
     </div>
@@ -698,8 +729,9 @@ const cards = {};   // key → { el, fill, badge, emaVal, emaLabel }
 })();
 
 // ── state ─────────────────────────────────────────────────────────────────────
-let ws          = null;
-let uiState     = 'DISCONNECTED';
+let ws             = null;
+let uiState        = 'DISCONNECTED';
+let stalenessTimer = null;
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 function connect() {
@@ -759,6 +791,7 @@ function handleMessage(raw) {
   else if (raw.startsWith('ALERT:'))            { onAlert(raw.slice(6)); }
   else if (raw === 'MONITORING_RESUMED')        { setUIState('MONITORING'); resetCards(); }
   else if (raw === 'FROZEN_TIMEOUT')            { /* MONITORING_RESUMED follows immediately */ }
+  else if (raw.startsWith('ERROR:'))            { onDeviceError(raw.slice(6)); }
 }
 
 // ── UI state machine ──────────────────────────────────────────────────────────
@@ -823,10 +856,14 @@ function onMonitorFrame(data) {
 
   if (data.raw) {
     ['upper', 'mid', 'lower'].forEach(pos => {
-      const r  = data.raw[pos];
-      const el = document.querySelector(`#raw-${pos} .val`);
-      if (el) el.textContent = `${r.p.toFixed(1)}° / ${r.r.toFixed(1)}° / ${r.y.toFixed(1)}°`;
+      const r = data.raw[pos];
+      if (r.v === false) {
+        setSensorState(pos, 'error', 'NO DATA');
+      } else {
+        setSensorState(pos, 'ok', `${r.p.toFixed(1)}° / ${r.r.toFixed(1)}° / ${r.y.toFixed(1)}°`);
+      }
     });
+    scheduleStaleness();
   }
 }
 
@@ -856,6 +893,47 @@ function setCard(key, stateClass, ema) {
 
 function resetCards() {
   CONDITIONS.forEach(c => setCard(c.key, 's-idle', 0));
+  resetSensors();
+}
+
+// ── sensor state ──────────────────────────────────────────────────────────────
+function setSensorState(pos, state, valText) {
+  const cell   = document.getElementById(`raw-${pos}`);
+  const valEl  = cell?.querySelector('.val');
+  const statEl = document.getElementById(`stat-${pos}`);
+  if (!cell) return;
+  cell.className = state === 'ok' ? 'sensor-cell' : `sensor-cell s-${state}`;
+  if (valText !== undefined && valEl) valEl.textContent = valText;
+  if (statEl) {
+    statEl.textContent = state === 'ok' ? '' : state.toUpperCase();
+    statEl.className   = state === 'ok' ? 'sensor-status' : `sensor-status ss-${state}`;
+  }
+}
+
+function resetSensors() {
+  clearTimeout(stalenessTimer);
+  ['upper', 'mid', 'lower'].forEach(pos => setSensorState(pos, 'ok', '--'));
+}
+
+function flagAllSensorsError() {
+  clearTimeout(stalenessTimer);
+  ['upper', 'mid', 'lower'].forEach(pos => setSensorState(pos, 'error', 'FAULT'));
+}
+
+function scheduleStaleness() {
+  clearTimeout(stalenessTimer);
+  // If no JSON frame arrives within 1.5 s (6 missed ticks at 4 Hz), mark sensors stale
+  stalenessTimer = setTimeout(() => {
+    ['upper', 'mid', 'lower'].forEach(pos => {
+      const cell = document.getElementById(`raw-${pos}`);
+      if (cell && !cell.classList.contains('s-error'))
+        setSensorState(pos, 'stale');
+    });
+  }, 1500);
+}
+
+function onDeviceError(code) {
+  if (code === 'IMU_MALFUNCTION') flagAllSensorsError();
 }
 
 // ── log ───────────────────────────────────────────────────────────────────────
@@ -1279,15 +1357,15 @@ void handleMonitoring() {
 
   SpineReading reading = readAllIMUs();
 
-  if (!reading.allValid) {
+  uint8_t flags = POST_GOOD;
+
+  if (reading.allValid) {
+    consecutiveBadReadings = 0;
+    flags = detectPostures(reading);
+  } else {
     handleInvalidReading();
-    return;
+    // EMA decays toward 0 during invalid ticks — prevents stale scores from firing false alerts
   }
-
-  consecutiveBadReadings = 0;  // reset on any good reading
-
-  // Detect which posture conditions are currently active
-  uint8_t flags = detectPostures(reading);
 
   // Update EMA for each condition independently.
   // Each EMA score represents a smoothed probability (0–1) that
@@ -1298,7 +1376,7 @@ void handleMonitoring() {
   emaScores[3] = updateEMA(emaScores[3], (flags & POST_LUMBAR_HYPERLORDOSIS) != 0);
   emaScores[4] = updateEMA(emaScores[4], (flags & POST_LUMBAR_FLATTENING)    != 0);
 
-  // 4 Hz JSON telemetry — boolean flags + raw EMA scores for all connected clients
+  // 4 Hz JSON telemetry — always broadcast so UI can see per-sensor validity
   {
     StaticJsonDocument<768> doc;
     doc["thoracic_slouch"]      = (flags & POST_THORACIC_SLOUCH)      != 0;
@@ -1318,14 +1396,17 @@ void handleMonitoring() {
     upper["p"] = reading.upper.pitch;
     upper["r"] = reading.upper.roll;
     upper["y"] = reading.upper.yaw;
+    upper["v"] = reading.upper.valid;   // false → sensor did not deliver data this tick
     JsonObject mid = raw.createNestedObject("mid");
     mid["p"] = reading.mid.pitch;
     mid["r"] = reading.mid.roll;
     mid["y"] = reading.mid.yaw;
+    mid["v"] = reading.mid.valid;
     JsonObject lower = raw.createNestedObject("lower");
     lower["p"] = reading.lower.pitch;
     lower["r"] = reading.lower.roll;
     lower["y"] = reading.lower.yaw;
+    lower["v"] = reading.lower.valid;
 
     String json;
     serializeJson(doc, json);
@@ -1333,15 +1414,16 @@ void handleMonitoring() {
     Serial.println(json);
   }
 
-  // Check if any condition has crossed the alert threshold.
-  // ALERT_INTERVAL_MS prevents repeated alerts for the same ongoing issue.
-  unsigned long now = millis();
-  if (now - lastAlertTime >= ALERT_INTERVAL_MS) {
-    if      (emaScores[0] > ALERT_THRESHOLD) { broadcast("ALERT:THORACIC_SLOUCH");      lastAlertTime = now; currentState = FROZEN; frozenEnteredAt = now; }
-    else if (emaScores[1] > ALERT_THRESHOLD) { broadcast("ALERT:FORWARD_FLEXION");      lastAlertTime = now; currentState = FROZEN; frozenEnteredAt = now; }
-    else if (emaScores[2] > ALERT_THRESHOLD) { broadcast("ALERT:LATERAL_LEAN");         lastAlertTime = now; currentState = FROZEN; frozenEnteredAt = now; }
-    else if (emaScores[3] > ALERT_THRESHOLD) { broadcast("ALERT:LUMBAR_HYPERLORDOSIS"); lastAlertTime = now; currentState = FROZEN; frozenEnteredAt = now; }
-    else if (emaScores[4] > ALERT_THRESHOLD) { broadcast("ALERT:LUMBAR_FLATTENING");    lastAlertTime = now; currentState = FROZEN; frozenEnteredAt = now; }
+  // Alert check runs only when all sensors are healthy
+  if (reading.allValid) {
+    unsigned long now = millis();
+    if (now - lastAlertTime >= ALERT_INTERVAL_MS) {
+      if      (emaScores[0] > ALERT_THRESHOLD) { broadcast("ALERT:THORACIC_SLOUCH");      lastAlertTime = now; currentState = FROZEN; frozenEnteredAt = now; }
+      else if (emaScores[1] > ALERT_THRESHOLD) { broadcast("ALERT:FORWARD_FLEXION");      lastAlertTime = now; currentState = FROZEN; frozenEnteredAt = now; }
+      else if (emaScores[2] > ALERT_THRESHOLD) { broadcast("ALERT:LATERAL_LEAN");         lastAlertTime = now; currentState = FROZEN; frozenEnteredAt = now; }
+      else if (emaScores[3] > ALERT_THRESHOLD) { broadcast("ALERT:LUMBAR_HYPERLORDOSIS"); lastAlertTime = now; currentState = FROZEN; frozenEnteredAt = now; }
+      else if (emaScores[4] > ALERT_THRESHOLD) { broadcast("ALERT:LUMBAR_FLATTENING");    lastAlertTime = now; currentState = FROZEN; frozenEnteredAt = now; }
+    }
   }
 }
 
