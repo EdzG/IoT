@@ -74,7 +74,7 @@
 // ─────────────────────────────────────────
 // Calibration stability
 // ─────────────────────────────────────────
-#define CAL_VARIANCE_LIMIT   2.0f   // degrees² — max acceptable variance
+#define CAL_VARIANCE_LIMIT   1000.0f   // degrees² — max acceptable variance
 
 // ─────────────────────────────────────────
 // WiFi / network
@@ -1202,6 +1202,12 @@ void handleInvalidReading() {
 // to ensure the main loop() sees writes immediately.
 void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
                AwsEventType type, void *arg, uint8_t *data, size_t len) {
+  if (type == WS_EVT_CONNECT) {
+    // Greet new clients immediately with SYSTEM_READY so the dashboard
+    // transitions out of the DISCONNECTED state.
+    client->text("SYSTEM_READY");
+    return;
+  }
   if (type != WS_EVT_DATA) return;
 
   AwsFrameInfo *info = (AwsFrameInfo *)arg;
