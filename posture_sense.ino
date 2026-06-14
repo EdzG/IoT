@@ -497,17 +497,30 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 1rem;
       margin-bottom: 1rem;
+      overflow: hidden;
     }
 
-    .sensor-panel-title {
-      font-size: 0.72rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--text-2);
-      margin-bottom: 0.75rem;
+    .collapsible-content {
+      padding: 1rem;
+      transition: max-height 0.3s ease-out, padding 0.3s ease;
+      max-height: 1000px;
+    }
+
+    .collapsed .collapsible-content {
+      max-height: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+      overflow: hidden;
+    }
+
+    .sensor-panel .log-header {
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+      padding: 0.65rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
 
     .sensor-grid {
@@ -613,31 +626,50 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 
   <div class="cards-grid" id="cards-grid"></div>
 
-  <section class="sensor-panel">
-    <div class="sensor-panel-title">IMU Raw Readings (Pitch / Roll / Yaw)</div>
-    <div class="sensor-grid">
-      <div class="sensor-cell" id="raw-upper">
-        <div class="sensor-label">Upper <span class="sensor-status" id="stat-upper"></span></div>
-        <span class="val">--</span>
+  <section class="sensor-panel" id="sensor-section">
+    <div class="log-header">
+      <span class="log-title">IMU Raw Readings (Pitch / Roll / Yaw)</span>
+      <div style="display: flex; gap: 0.5rem;">
+        <button class="btn-clear" onclick="toggleSection('sensor-section')">Toggle</button>
+        <button class="btn-clear" onclick="hideSection('sensor-section')">Hide</button>
       </div>
-      <div class="sensor-cell" id="raw-mid">
-        <div class="sensor-label">Mid <span class="sensor-status" id="stat-mid"></span></div>
-        <span class="val">--</span>
-      </div>
-      <div class="sensor-cell" id="raw-lower">
-        <div class="sensor-label">Lower <span class="sensor-status" id="stat-lower"></span></div>
-        <span class="val">--</span>
+    </div>
+    <div class="collapsible-content">
+      <div class="sensor-grid">
+        <div class="sensor-cell" id="raw-upper">
+          <div class="sensor-label">Upper <span class="sensor-status" id="stat-upper"></span></div>
+          <span class="val">--</span>
+        </div>
+        <div class="sensor-cell" id="raw-mid">
+          <div class="sensor-label">Mid <span class="sensor-status" id="stat-mid"></span></div>
+          <span class="val">--</span>
+        </div>
+        <div class="sensor-cell" id="raw-lower">
+          <div class="sensor-label">Lower <span class="sensor-status" id="stat-lower"></span></div>
+          <span class="val">--</span>
+        </div>
       </div>
     </div>
   </section>
 
-  <section class="log-section">
+  <section class="log-section" id="log-section">
     <div class="log-header">
       <span class="log-title">Raw WebSocket Log</span>
-      <button class="btn-clear" onclick="clearLog()">Clear</button>
+      <div style="display: flex; gap: 0.5rem;">
+        <button class="btn-clear" onclick="clearLog()">Clear</button>
+        <button class="btn-clear" onclick="toggleSection('log-section')">Toggle</button>
+        <button class="btn-clear" onclick="hideSection('log-section')">Hide</button>
+      </div>
     </div>
-    <div id="log"></div>
+    <div class="collapsible-content">
+      <div id="log"></div>
+    </div>
   </section>
+
+  <div id="restore-controls" style="display: none; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem;">
+    <button class="btn-clear" id="restore-sensor" style="display: none;" onclick="showSection('sensor-section')">Restore Raw Readings</button>
+    <button class="btn-clear" id="restore-log" style="display: none;" onclick="showSection('log-section')">Restore Log</button>
+  </div>
 
 </div>
 <script>
@@ -963,6 +995,39 @@ function clearLog() { logEl.innerHTML = ''; }
 
 function pad(n)  { return String(n).padStart(2, '0'); }
 function pad3(n) { return String(n).padStart(3, '0'); }
+
+// ── UI Toggle logic ──────────────────────────────────────────────────────────
+function toggleSection(id) {
+  const el = document.getElementById(id);
+  el.classList.toggle('collapsed');
+}
+
+function hideSection(id) {
+  const el = document.getElementById(id);
+  el.style.display = 'none';
+  updateRestoreControls();
+}
+
+function showSection(id) {
+  const el = document.getElementById(id);
+  el.style.display = 'block';
+  updateRestoreControls();
+}
+
+function updateRestoreControls() {
+  const sensor = document.getElementById('sensor-section');
+  const log = document.getElementById('log-section');
+  const restoreSensor = document.getElementById('restore-sensor');
+  const restoreLog = document.getElementById('restore-log');
+  const restoreWrap = document.getElementById('restore-controls');
+
+  const sensorHidden = sensor.style.display === 'none';
+  const logHidden = log.style.display === 'none';
+
+  restoreSensor.style.display = sensorHidden ? 'inline-block' : 'none';
+  restoreLog.style.display = logHidden ? 'inline-block' : 'none';
+  restoreWrap.style.display = (sensorHidden || logHidden) ? 'flex' : 'none';
+}
 
 // ── init ──────────────────────────────────────────────────────────────────────
 resetCards();
